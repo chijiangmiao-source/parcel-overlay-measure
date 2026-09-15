@@ -168,10 +168,10 @@ python3.13 -m venv .venv
 pip install -r requirements-dev.txt
 
 uvicorn app.main:app --reload
-pytest -q                                   # 80 pass, 6 skipped offline
+pytest -q                                   # 87 pass, 6 skipped offline
 
 EXACT_AREA_BASE_URL=http://127.0.0.1:8000 pytest -q   # with a server running:
-                                                      # all 86 tests execute
+                                                      # all 93 tests execute
 ```
 
 ## Test suite

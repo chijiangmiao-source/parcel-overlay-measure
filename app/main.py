@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .geometry.validation import GeometryValidationError
 from .models import OverlapRequest, OverlapResponse
@@ -65,6 +66,30 @@ async def request_validation_handler(request: Request,
             "invalid_request",
             "request payload does not satisfy the schema",
             details,
+        ),
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request,
+                                 exc: StarletteHTTPException) -> JSONResponse:
+    del request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_body("http_error", str(exc.detail)),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request,
+                                      exc: Exception) -> JSONResponse:
+    # Last-resort guard: every response keeps the structured JSON envelope
+    # instead of Starlette's plain-text 500.
+    del request, exc
+    return JSONResponse(
+        status_code=500,
+        content=_error_body(
+            "internal_error", "an unexpected error occurred while computing the result"
         ),
     )
 

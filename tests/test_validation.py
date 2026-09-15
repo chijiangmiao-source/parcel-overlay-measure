@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def poly(exterior, holes=None):
     return {"exterior": exterior, "holes": holes or []}
@@ -118,6 +120,32 @@ def test_ring_not_a_list_is_422(client):
               "b": [{"exterior": [[0, 0], [1, 0], [1, 1]], "holes": []}]},
     )
     assert_422(resp)
+
+
+@pytest.mark.parametrize("bad_holes", [None, 5, "x", [None], [5], [[]]])
+def test_bad_holes_field_is_422_not_500(client, bad_holes):
+    resp = client.post(
+        "/api/v1/overlap",
+        json={"a": [{"exterior": [[0, 0], [2, 0], [2, 2], [0, 2]],
+                     "holes": bad_holes}],
+              "b": [{"exterior": [[0, 0], [1, 0], [1, 1]], "holes": []}]},
+    )
+    assert resp.status_code == 422, bad_holes
+    assert resp.headers["content-type"].startswith("application/json")
+    data = resp.json()
+    assert data["error"]["code"] in {"invalid_request", "invalid_geometry"}
+    assert isinstance(data["error"]["message"], str)
+
+
+def test_null_polygon_and_null_group_are_structured_422(client):
+    for payload in (
+        {"a": [None], "b": [{"exterior": [[0, 0], [1, 0], [1, 1]], "holes": []}]},
+        {"a": None, "b": []},
+        {"a": [], "b": None},
+    ):
+        resp = client.post("/api/v1/overlap", json=payload)
+        assert resp.status_code == 422, payload
+        assert "error" in resp.json()
 
 
 def test_closing_duplicate_message_is_422(client):

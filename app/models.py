@@ -33,7 +33,15 @@ class PolygonIn(BaseModel):
     @field_validator("holes", mode="before")
     @classmethod
     def _check_holes(cls, v: List[List[Coordinate]]) -> List[List[Coordinate]]:
-        for hole in v:
+        # This runs before type coercion: None / a number / a string would
+        # otherwise raise TypeError while iterating and escape as a 500.
+        if v is None:
+            raise ValueError("holes must be a list of rings (use [] for none)")
+        if not isinstance(v, list):
+            raise ValueError("holes must be a list of rings")
+        for i, hole in enumerate(v):
+            if not isinstance(hole, list):
+                raise ValueError(f"holes[{i}] must be a ring (list of vertices)")
             _validate_ring_points(hole, loc="holes")
         return v
 
