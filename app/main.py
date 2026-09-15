@@ -10,8 +10,12 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .geometry.validation import GeometryValidationError
-from .models import OverlapRequest, OverlapResponse
-from .service import compute_overlap, round_half_up_thirds
+from .models import OverlapRequest, OverlapResponse, TransectRequest, TransectResponse
+from .service import (
+    compute_overlap,
+    compute_transect,
+    round_half_up_thirds,
+)
 
 app = FastAPI(
     title="Exact Multi-Polygon Overlap API",
@@ -111,3 +115,26 @@ def overlap(req: OverlapRequest) -> OverlapResponse:
         denominator=area.denominator,
         decimal=decimal,
     )
+
+
+@app.post("/api/v1/transect", response_model=TransectResponse)
+def transect(req: TransectRequest) -> TransectResponse:
+    # Consecutive duplicate path points are a request-shape problem and keep
+    # their request position in the error loc (a whole-field pydantic
+    # validator could only attach the error to ``path``, not the point).
+    for i in range(1, len(req.path)):
+        if req.path[i] == req.path[i - 1]:
+            raise RequestValidationError(
+                [
+                    {
+                        "type": "value_error",
+                        "loc": ("body", "path", i),
+                        "msg": (
+                            f"path point {i} is identical to point {i - 1}; "
+                            "consecutive path points must differ"
+                        ),
+                        "input": list(req.path[i]),
+                    }
+                ]
+            )
+    return TransectResponse.model_validate(compute_transect(req))

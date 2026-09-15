@@ -117,6 +117,70 @@ Fractional example (two triangles overlapping in a triangle of ½ mm²):
 `decimal` rounds the exact fraction **half-up** to exactly three digits
 (`0.0005 → 0.001`), implemented with integer arithmetic rather than `round()`.
 
+### `POST /api/v1/transect`
+
+Submits the same two polygon groups together with a polyline (`path`) of at
+least two integer coordinate points; consecutive points must differ.  The
+response profiles **each original segment** separately against both groups.
+Every segment is split at every exact parameter `t` at which it meets a
+region boundary (proper crossings, vertex/T-junction contacts, and both ends
+of collinear boundary overlaps); the resulting intervals are ordered,
+reduced-fraction parameter ranges `[start, end)` with no gap and no overlap
+and cover parameters `0` through `1` completely:
+
+```json
+{
+  "a": [
+    {
+      "exterior": [[0, 0], [10, 0], [10, 10], [0, 10]],
+      "holes": [[[4, 4], [6, 4], [6, 6], [4, 6]]]
+    }
+  ],
+  "b": [
+    {"exterior": [[2, 2], [8, 2], [8, 8], [2, 8]], "holes": []}
+  ],
+  "path": [[-2, 5], [12, 5]]
+}
+```
+
+```json
+{
+  "segments": [
+    {
+      "segment": 0,
+      "intervals": [
+        {"start": [0, 1], "end": [1, 7], "a": "outside",  "b": "outside"},
+        {"start": [1, 7], "end": [2, 7], "a": "inside",   "b": "outside"},
+        {"start": [2, 7], "end": [3, 7], "a": "inside",   "b": "inside"},
+        {"start": [3, 7], "end": [4, 7], "a": "outside",  "b": "inside"},
+        {"start": [4, 7], "end": [5, 7], "a": "inside",   "b": "inside"},
+        {"start": [5, 7], "end": [6, 7], "a": "inside",   "b": "outside"},
+        {"start": [6, 7], "end": [1, 1], "a": "outside",  "b": "outside"}
+      ],
+      "contacts": [
+        {"at": [1, 7], "before_a": "outside", "at_a": "boundary",
+         "after_a": "inside", "before_b": "outside", "at_b": "outside",
+         "after_b": "outside"}
+      ]
+    }
+  ]
+}
+```
+
+* `start`/`end`/`at` are reduced fractions `[numerator, denominator]` —
+  fractional intersections are never converted to floating point.
+* `a`/`b` is the relation of the open interval to each group: `outside`,
+  `inside` or `boundary` (a segment running along a coincident edge yields a
+  `boundary` interval).
+* `contacts` lists isolated boundary-contact *points* (a crossing, a vertex
+  tangency, a fold vertex resting on a boundary); each records the
+  before/at/after relation triple for both groups.  The missing side of a
+  contact at an endpoint of the whole polyline is `null`.  Contacts inside a
+  boundary run are not duplicated.
+* Intervals and events are stable under reversal: reversing the whole path
+  mirrors every parameter `t -> 1 - t` (and segment `k -> n-1-k`) and swaps
+  before/after, giving a one-to-one correspondence between the two profiles.
+
 ### Errors (all 422 use one structured envelope)
 
 ```json
@@ -168,16 +232,23 @@ python3.13 -m venv .venv
 pip install -r requirements-dev.txt
 
 uvicorn app.main:app --reload
-pytest -q                                   # 87 pass, 6 skipped offline
+pytest -q                                   # 111 pass, 10 skipped offline
 
 EXACT_AREA_BASE_URL=http://127.0.0.1:8000 pytest -q   # with a server running:
-                                                      # all 93 tests execute
+                                                      # all 121 tests execute
 ```
 
 ## Test suite
 
 * `tests/test_api.py` — endpoint behaviour, fraction reduction, half-up
   rounding, contacts = 0, and order/rotation/orientation independence.
+* `tests/test_transect.py` — transect endpoint: outer-ring/hole crossings for
+  both groups, vertex tangencies, collinear boundary runs, polyline vertices
+  on a boundary, fractional forward/reverse paths, full [0, 1] coverage, and
+  every 422 rule including request-position duplicate path points.
+* `tests/test_transect_units.py` — exact event parameters, point
+  classification, randomized profiles checked against an independent
+  winding-number reference and the reversal bijection.
 * `tests/test_validation.py` — every 422 rule and the structured error body.
 * `tests/test_geometry_units.py` — primitives: orientation, point-on-segment,
   fractional intersection, simplicity detection, rounding table.
@@ -200,6 +271,7 @@ app/
     rationals.py          exact predicates, intersections, ring primitives
     validation.py         simplicity / containment / disjointness rules
     arrangement.py        planar arrangement + winding-number overlap area
+    transect.py           exact event-scan traversal profiles of polylines
 tests/                    pytest suite (incl. live HTTP acceptance tests)
 Dockerfile                python:3.13-slim image (runtime + test deps)
 docker-compose.yml        api service (API_PORT) + one-shot verify service
